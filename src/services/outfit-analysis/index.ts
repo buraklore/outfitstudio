@@ -22,9 +22,10 @@ import {
   type RawBreakdown,
 } from "@/services/outfit-analysis/scoring";
 import { SLOT_LABELS, type OutfitSlot } from "@/types/clothing";
+import { scoreLabelText } from "@/lib/i18n";
 import type { ImprovementDto, OutfitAnalysisDto } from "@/types/api";
 
-const PROMPT_VERSION = "v1";
+const PROMPT_VERSION = "v2";
 const ANALYSIS_SEED = 7;
 
 const LANGUAGE_NAMES: Record<string, string> = { tr: "Turkish", en: "English" };
@@ -49,6 +50,7 @@ You will see an AI-generated mannequin preview of the full outfit AND the origin
 
 Write "styleComment" (a short, high-quality stylist paragraph: strongest aspect, overall character, one thing to refine), "whyItWorks", 2-5 "improvements" (each tagged add/swap/adjust/avoid, concrete and actionable) and 2-4 "bestFor" occasions in ${language}. Keep per-criterion "reasoning" in ${language} too, one or two objective sentences each.
 "detectedStyles" must come from the allowed list; "dominantColors" are the outfit's main colors as simple ${language} color words.
+"suggestedOutfit": when the combination has clear problems (roughly when your criterion scores sum below ~75), propose a corrected outfit built primarily from the PROVIDED garments — in ${language}, say which items to keep, which to drop, and what generic kind of piece to add instead (no brand names, no invented products), plus the recommended combination as a short "items" list. When the outfit already works well, set "suggestedOutfit" to null.
 Never invent product details you cannot see; if a material is uncertain, phrase it as an appearance ("appears to be…").`;
 }
 
@@ -83,7 +85,9 @@ export async function analyzeOutfit(outfitId: string): Promise<OutfitAnalysisDto
 
   const storage = getStorage();
   const env = getEnv();
-  const language = LANGUAGE_NAMES[env.ANALYSIS_LOCALE] ?? "English";
+  const outfitLocale =
+    outfit.locale === "en" || outfit.locale === "tr" ? outfit.locale : env.ANALYSIS_LOCALE;
+  const language = LANGUAGE_NAMES[outfitLocale] ?? "Turkish";
   const models = getModels();
 
   const preview = await storage.get(outfit.generatedImageKey);
@@ -124,10 +128,14 @@ export async function analyzeOutfit(outfitId: string): Promise<OutfitAnalysisDto
     action: i.action,
     text: i.text,
   }));
+  const localizedLabel = scoreLabelText(
+    outfitLocale === "en" ? "en" : "tr",
+    computed.label,
+  );
 
   const dto: OutfitAnalysisDto = {
     overallScore: computed.overallScore,
-    label: computed.label,
+    label: localizedLabel,
     breakdown: computed.breakdown,
     styleComment: parsed.styleComment,
     whyItWorks: parsed.whyItWorks,
@@ -135,6 +143,7 @@ export async function analyzeOutfit(outfitId: string): Promise<OutfitAnalysisDto
     bestFor: parsed.bestFor,
     detectedStyles: parsed.detectedStyles,
     dominantColors: parsed.dominantColors,
+    suggestedOutfit: parsed.suggestedOutfit,
   };
 
   await prisma.$transaction([
@@ -150,6 +159,7 @@ export async function analyzeOutfit(outfitId: string): Promise<OutfitAnalysisDto
         bestFor: dto.bestFor,
         detectedStyles: dto.detectedStyles,
         dominantColors: dto.dominantColors,
+        suggestedOutfit: (dto.suggestedOutfit ?? Prisma.JsonNull) as Prisma.NullableJsonNullValueInput | Prisma.InputJsonValue,
         model: models.vision,
         promptVersion: PROMPT_VERSION,
       },
@@ -164,6 +174,7 @@ export async function analyzeOutfit(outfitId: string): Promise<OutfitAnalysisDto
         bestFor: dto.bestFor,
         detectedStyles: dto.detectedStyles,
         dominantColors: dto.dominantColors,
+        suggestedOutfit: (dto.suggestedOutfit ?? Prisma.JsonNull) as Prisma.NullableJsonNullValueInput | Prisma.InputJsonValue,
         model: models.vision,
         promptVersion: PROMPT_VERSION,
       },

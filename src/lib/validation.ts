@@ -46,6 +46,7 @@ export const extractRequestSchema = z.object({
 });
 
 export const analyzeRequestSchema = z.object({
+  locale: z.enum(["tr", "en"]).catch("tr").default("tr"),
   images: z
     .array(
       z.object({
@@ -79,6 +80,7 @@ export const outfitItemInputSchema = z.object({
 });
 
 export const createOutfitSchema = z.object({
+  locale: z.enum(["tr", "en"]).catch("tr").default("tr"),
   mannequinType: z.enum(MANNEQUIN_TYPES).default("NEUTRAL"),
   stylePreset: z.enum(STYLE_PRESETS).default("auto"),
   items: z.array(outfitItemInputSchema).min(2, "Add at least two items").max(8),

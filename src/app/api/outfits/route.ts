@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
             status: "DRAFT",
             mannequinType: input.mannequinType,
             stylePreset: input.stylePreset,
+            locale: input.locale,
           },
         });
         for (const slot of slots) {

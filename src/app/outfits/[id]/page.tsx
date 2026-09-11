@@ -4,6 +4,7 @@ import { getUserIdIfExists } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { toOutfitDto } from "@/services/outfit-serializer";
 import { Badge, SectionLabel } from "@/components/ui";
+import { criterionLabel, slotLabel as slotName, t } from "@/lib/i18n";
 import AnalyzeRetry from "./AnalyzeRetry";
 import type { ImprovementDto } from "@/types/api";
 
@@ -36,6 +37,9 @@ export default async function OutfitPage({
   if (!outfit || (outfit.userId && outfit.userId !== userId)) notFound();
 
   const dto = toOutfitDto(outfit);
+  // The result renders in the language chosen at creation time.
+  const locale = dto.locale;
+  const M = t(locale).result;
   const analysis = dto.analysis;
 
   return (
@@ -49,35 +53,33 @@ export default async function OutfitPage({
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={dto.generatedImageUrl}
-                  alt="AI-generated outfit preview on a mannequin"
+                  alt={M.aiPreview}
                   className="aspect-[3/4] w-full object-cover"
                 />
               </a>
             ) : (
               <div className="flex aspect-[3/4] items-center justify-center p-8 text-center text-sm text-taupe">
-                {dto.status === "FAILED"
-                  ? "The outfit preview couldn't be generated. Please try again."
-                  : "The preview is still being prepared."}
+                {dto.status === "FAILED" ? M.previewFailed : M.previewPreparing}
               </div>
             )}
           </div>
           <div className="mt-3 flex items-center justify-between">
-            <Badge tone="moss">AI Outfit Preview</Badge>
-            <span className="text-xs text-taupe">Visualization — not a real photo</span>
+            <Badge tone="moss">{M.aiPreview}</Badge>
+            <span className="text-xs text-taupe">{M.notReal}</span>
           </div>
           {dto.status === "FAILED" && (
             <Link
               href="/create"
               className="mt-4 inline-block text-sm font-medium text-moss hover:underline"
             >
-              ← Start over
+              {M.startOver}
             </Link>
           )}
         </div>
 
         {/* ------------------------------ report ------------------------------- */}
         <div>
-          <SectionLabel>Your outfit</SectionLabel>
+          <SectionLabel>{M.yourOutfit}</SectionLabel>
 
           {analysis ? (
             <>
@@ -107,12 +109,14 @@ export default async function OutfitPage({
               <p className="mt-5 max-w-xl leading-relaxed text-ink">{analysis.styleComment}</p>
 
               <section className="mt-10">
-                <SectionLabel>Score breakdown</SectionLabel>
+                <SectionLabel>{M.breakdown}</SectionLabel>
                 <div className="mt-4 space-y-4">
                   {analysis.breakdown.map((entry) => (
                     <div key={entry.key}>
                       <div className="flex items-baseline justify-between gap-3 text-sm">
-                        <span className="font-medium">{entry.label}</span>
+                        <span className="font-medium">
+                          {criterionLabel(locale, entry.key, entry.label)}
+                        </span>
                         <span className="tabular-nums text-taupe">
                           {entry.score}
                           <span className="text-taupe/70"> / {entry.maxScore}</span>
@@ -137,13 +141,13 @@ export default async function OutfitPage({
               </section>
 
               <section className="mt-10">
-                <SectionLabel>Why it works</SectionLabel>
+                <SectionLabel>{M.whyItWorks}</SectionLabel>
                 <p className="mt-3 max-w-xl leading-relaxed text-ink">{analysis.whyItWorks}</p>
               </section>
 
               {analysis.improvements.length > 0 && (
                 <section className="mt-10">
-                  <SectionLabel>How to improve</SectionLabel>
+                  <SectionLabel>{M.improve}</SectionLabel>
                   <ul className="mt-3 space-y-2.5">
                     {analysis.improvements.map((imp, i) => {
                       const meta = ACTION_GLYPHS[imp.action] ?? ACTION_GLYPHS.adjust;
@@ -160,9 +164,27 @@ export default async function OutfitPage({
                 </section>
               )}
 
+              {analysis.suggestedOutfit && (
+                <section className="mt-10 rounded-2xl border border-moss/25 bg-moss-soft/60 p-5">
+                  <SectionLabel>{M.suggested}</SectionLabel>
+                  <p className="mt-3 max-w-xl leading-relaxed text-ink">
+                    {analysis.suggestedOutfit.summary}
+                  </p>
+                  {analysis.suggestedOutfit.items.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {analysis.suggestedOutfit.items.map((piece) => (
+                        <Badge key={piece} tone="moss">
+                          {piece}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+
               {analysis.bestFor.length > 0 && (
                 <section className="mt-10">
-                  <SectionLabel>Best for</SectionLabel>
+                  <SectionLabel>{M.bestFor}</SectionLabel>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {analysis.bestFor.map((occasion) => (
                       <Badge key={occasion}>{occasion}</Badge>
@@ -173,21 +195,16 @@ export default async function OutfitPage({
             </>
           ) : dto.generatedImageUrl ? (
             <div className="mt-4">
-              <AnalyzeRetry outfitId={dto.id} />
+              <AnalyzeRetry outfitId={dto.id} locale={locale} />
             </div>
           ) : (
-            <p className="mt-4 text-sm text-taupe">
-              Once the preview is generated, your score and style report will appear here.
-            </p>
+            <p className="mt-4 text-sm text-taupe">{M.scoreNote}</p>
           )}
 
           {/* --------------------------- original items --------------------------- */}
           <section className="mt-12 border-t border-hairline pt-8">
-            <SectionLabel>Original products</SectionLabel>
-            <p className="mt-1 text-xs text-taupe">
-              These are your untouched source images — the preview above is an AI visualization of
-              them.
-            </p>
+            <SectionLabel>{M.originalProducts}</SectionLabel>
+            <p className="mt-1 text-xs text-taupe">{M.originalCaption}</p>
             <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
               {dto.items.map((item) => (
                 <div
@@ -201,7 +218,9 @@ export default async function OutfitPage({
                     className="aspect-square w-full object-cover"
                   />
                   <div className="p-3">
-                    <p className="text-xs uppercase tracking-wide text-taupe">{item.slot}</p>
+                    <p className="text-xs uppercase tracking-wide text-taupe">
+                      {slotName(locale, item.slot)}
+                    </p>
                     <p className="mt-0.5 line-clamp-2 text-sm">
                       {item.description ?? item.category.replace(/-/g, " ")}
                     </p>
@@ -218,7 +237,7 @@ export default async function OutfitPage({
                         rel="noreferrer nofollow"
                         className="mt-1 inline-block text-xs font-medium text-moss hover:underline"
                       >
-                        View product →
+                        {M.viewProduct}
                       </a>
                     )}
                   </div>
@@ -232,7 +251,7 @@ export default async function OutfitPage({
               href="/create"
               className="inline-flex items-center gap-2 rounded-full bg-moss px-5 py-2.5 text-sm font-medium text-paper transition-colors hover:bg-ink"
             >
-              Build another outfit
+              {M.buildAnother}
             </Link>
           </div>
         </div>

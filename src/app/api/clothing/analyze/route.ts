@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
         imageKey: image.imageKey,
         imageUrl: storage.publicUrl(image.imageKey),
         slotHint: image.slotHint,
+        locale: body.locale,
       });
       return { imageKey: image.imageKey, imageUrl: storage.publicUrl(image.imageKey), items };
     });

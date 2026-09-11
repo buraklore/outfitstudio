@@ -1,13 +1,12 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   analyzeClothing,
   ApiClientError,
   createOutfit,
   extractProduct,
-  friendlyMessage,
   generateOutfit,
   requestOutfitAnalysis,
   uploadImage,
@@ -15,13 +14,21 @@ import {
 import { Badge, Button, Card, SectionLabel, Spinner } from "@/components/ui";
 import { StepList, type Step, type StepState } from "@/components/StepList";
 import {
+  categoryLabel,
+  errorMessage,
+  mannequinLabel,
+  presetLabel,
+  t,
+  warningText,
+  type Locale,
+} from "@/lib/i18n";
+import {
   CLOTHING_CATEGORIES,
+  slotForCategory,
   type ClothingCategory,
 } from "@/types/clothing";
 import {
-  MANNEQUIN_LABELS,
   MANNEQUIN_TYPES,
-  STYLE_PRESET_LABELS,
   STYLE_PRESETS,
   type MannequinType,
   type StylePreset,
@@ -83,37 +90,65 @@ interface ReviewItem {
   confirmed: boolean;
 }
 
-const INITIAL_SLOTS: Omit<LinkSlot, "url" | "status">[] = [
-  { id: "top", label: "Top", slotHint: "top", optional: false },
-  { id: "bottom", label: "Bottom", slotHint: "bottom", optional: false },
-  { id: "shoes", label: "Shoes", slotHint: "shoes", optional: false },
-  { id: "outerwear", label: "Jacket / Outerwear", slotHint: "outerwear", optional: true },
-  { id: "accessory", label: "Accessory", slotHint: "accessory", optional: true },
-];
-
 function newId(): string {
   return Math.random().toString(36).slice(2, 10);
-}
-
-function categoryLabel(category: string): string {
-  return category.replace(/-/g, " ");
 }
 
 function needsConfirmation(item: ReviewItem): boolean {
   return (item.analysis.confidence < 0.7 || !item.analysis.categoryMatched) && !item.confirmed;
 }
 
-export default function CreateFlow() {
+export default function CreateFlow({ locale }: { locale: Locale }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialMode: Mode = searchParams.get("mode") === "upload" ? "upload" : "links";
+  const M = t(locale).create;
+
+  const initialSlots: LinkSlot[] = useMemo(
+    () => [
+      { id: "top", label: M.slotTop, slotHint: "top", optional: false, url: "", status: "idle" },
+      {
+        id: "bottom",
+        label: M.slotBottom,
+        slotHint: "bottom",
+        optional: false,
+        url: "",
+        status: "idle",
+      },
+      {
+        id: "shoes",
+        label: M.slotShoes,
+        slotHint: "shoes",
+        optional: false,
+        url: "",
+        status: "idle",
+      },
+      {
+        id: "outerwear",
+        label: M.slotOuterwear,
+        slotHint: "outerwear",
+        optional: true,
+        url: "",
+        status: "idle",
+      },
+      {
+        id: "accessory",
+        label: M.slotAccessory,
+        slotHint: "accessory",
+        optional: true,
+        url: "",
+        status: "idle",
+      },
+    ],
+    // Locale changes remount the page (server refresh), so this is stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
   const [mode, setMode] = useState<Mode>(initialMode);
   const [phase, setPhase] = useState<Phase>("input");
   const [globalError, setGlobalError] = useState<string | null>(null);
-  const [slots, setSlots] = useState<LinkSlot[]>(
-    INITIAL_SLOTS.map((s) => ({ ...s, url: "", status: "idle" })),
-  );
+  const [slots, setSlots] = useState<LinkSlot[]>(initialSlots);
   const [uploads, setUploads] = useState<UploadEntry[]>([]);
   const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
   const [unidentified, setUnidentified] = useState<string[]>([]);
@@ -127,9 +162,13 @@ export default function CreateFlow() {
   const [scoreState, setScoreState] = useState<StepState>("pending");
   const selectRefs = useRef(new Map<string, HTMLSelectElement>());
 
-  const updateSlot = useCallback((id: string, patch: Partial<LinkSlot>) => {
+  const msg = (code: string, server?: string) => errorMessage(locale, code, server);
+  const fromError = (e: unknown, fallbackCode: string) =>
+    e instanceof ApiClientError ? msg(e.code, e.message) : msg(fallbackCode);
+
+  const updateSlot = (id: string, patch: Partial<LinkSlot>) => {
     setSlots((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
-  }, []);
+  };
 
   /* ------------------------------ links mode ------------------------------ */
 
@@ -138,7 +177,7 @@ export default function CreateFlow() {
       ...prev,
       {
         id: `extra-${newId()}`,
-        label: `Item ${prev.length + 1}`,
+        label: `${M.slotExtra} ${prev.length + 1}`,
         optional: true,
         url: "",
         status: "idle",
@@ -160,10 +199,7 @@ export default function CreateFlow() {
         error: undefined,
       });
     } catch (e) {
-      updateSlot(slot.id, {
-        uploading: false,
-        error: e instanceof ApiClientError ? e.message : friendlyMessage("INTERNAL"),
-      });
+      updateSlot(slot.id, { uploading: false, error: fromError(e, "IMAGE_UNREADABLE") });
     }
   }
 
@@ -172,7 +208,7 @@ export default function CreateFlow() {
     const snapshot = slots;
     const filled = snapshot.filter(slotFilled);
     if (filled.length < 2) {
-      setGlobalError("Add at least two items (e.g. a top and a bottom) to build an outfit.");
+      setGlobalError(M.minTwo);
       return;
     }
     setPhase("processing");
@@ -193,10 +229,7 @@ export default function CreateFlow() {
           updateSlot(slot.id, { status: "done", product });
           return true;
         } catch (e) {
-          updateSlot(slot.id, {
-            status: "failed",
-            error: e instanceof ApiClientError ? e.message : friendlyMessage("URL_FETCH_FAILED"),
-          });
+          updateSlot(slot.id, { status: "failed", error: fromError(e, "URL_FETCH_FAILED") });
           return false;
         }
       }),
@@ -206,9 +239,7 @@ export default function CreateFlow() {
       // Spec §6/§22 — failed links fall back to a per-slot image upload.
       setCollectState("pending");
       setPhase("input");
-      setGlobalError(
-        "Some product pages couldn't be accessed. Upload their images below, or remove those links.",
-      );
+      setGlobalError(M.someFailed);
       return;
     }
 
@@ -249,26 +280,14 @@ export default function CreateFlow() {
     setGlobalError(null);
     for (const file of Array.from(files)) {
       const id = newId();
-      setUploads((prev) => [
-        ...prev,
-        { id, fileName: file.name || "photo", status: "uploading" },
-      ]);
+      setUploads((prev) => [...prev, { id, fileName: file.name || "photo", status: "uploading" }]);
       try {
         const data = await uploadImage(file);
-        setUploads((prev) =>
-          prev.map((u) => (u.id === id ? { ...u, status: "done", data } : u)),
-        );
+        setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, status: "done", data } : u)));
       } catch (e) {
         setUploads((prev) =>
           prev.map((u) =>
-            u.id === id
-              ? {
-                  ...u,
-                  status: "failed",
-                  error:
-                    e instanceof ApiClientError ? e.message : friendlyMessage("IMAGE_UNREADABLE"),
-                }
-              : u,
+            u.id === id ? { ...u, status: "failed", error: fromError(e, "IMAGE_UNREADABLE") } : u,
           ),
         );
       }
@@ -279,7 +298,7 @@ export default function CreateFlow() {
     setGlobalError(null);
     const done = uploads.filter((u) => u.status === "done" && u.data);
     if (done.length < 1) {
-      setGlobalError("Upload at least one photo of your clothes.");
+      setGlobalError(M.minOneUpload);
       return;
     }
     setPhase("processing");
@@ -299,16 +318,28 @@ export default function CreateFlow() {
     try {
       const res = await analyzeClothing(
         inputs.map((i) => ({ imageKey: i.imageKey, slotHint: i.slotHint })),
+        locale,
       );
       const items: ReviewItem[] = [];
       const failedImages: string[] = [];
       for (const result of res.results) {
         const input = inputs.find((i) => i.imageKey === result.imageKey);
-        if (result.items.length === 0) {
-          failedImages.push(input?.meta.sourceUrl ?? "One of your photos");
+        // Slot-hinted photos (Top/Bottom/Shoes…) often show a model wearing
+        // OTHER garments too. Keep only the garment(s) matching the hinted
+        // slot so stray pieces never leak into the outfit; keep everything
+        // when nothing matches or when there is no hint (free uploads).
+        let kept = result.items;
+        if (input?.slotHint) {
+          const matching = result.items.filter(
+            (it) => slotForCategory(it.category) === input.slotHint,
+          );
+          if (matching.length > 0) kept = matching;
+        }
+        if (kept.length === 0) {
+          failedImages.push(input?.meta.sourceUrl ?? M.yourPhoto);
           continue;
         }
-        for (const analysis of result.items) {
+        for (const analysis of kept) {
           items.push({
             id: newId(),
             imageKey: result.imageKey,
@@ -323,7 +354,7 @@ export default function CreateFlow() {
       if (items.length === 0) {
         setAnalyzeState("pending");
         setPhase("input");
-        setGlobalError(friendlyMessage("CLOTHING_NOT_DETECTED"));
+        setGlobalError(msg("CLOTHING_NOT_DETECTED"));
         return;
       }
       setAnalyzeState("done");
@@ -333,9 +364,7 @@ export default function CreateFlow() {
     } catch (e) {
       setAnalyzeState("error");
       setPhase("input");
-      setGlobalError(
-        e instanceof ApiClientError ? e.message : friendlyMessage("CLOTHING_NOT_DETECTED"),
-      );
+      setGlobalError(fromError(e, "CLOTHING_NOT_DETECTED"));
     }
   }
 
@@ -344,6 +373,21 @@ export default function CreateFlow() {
     [reviewItems],
   );
 
+  /** Duplicate-slot notice (e.g. two bottoms, two pairs of shoes). */
+  const duplicateNotice = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of reviewItems) {
+      const slot = slotForCategory(item.category);
+      counts.set(slot, (counts.get(slot) ?? 0) + 1);
+    }
+    const parts: string[] = [];
+    const bottoms = counts.get("bottom") ?? 0;
+    const shoes = counts.get("shoes") ?? 0;
+    if (bottoms > 1) parts.push(M.dupBottom(bottoms));
+    if (shoes > 1) parts.push(M.dupShoes(shoes));
+    return parts.length > 0 ? parts : null;
+  }, [reviewItems, M]);
+
   function patchReviewItem(id: string, patch: Partial<ReviewItem>) {
     setReviewItems((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   }
@@ -351,7 +395,7 @@ export default function CreateFlow() {
   async function handleGenerate() {
     setGlobalError(null);
     if (reviewItems.length < 2) {
-      setGlobalError("Keep at least two items to build an outfit.");
+      setGlobalError(M.keepTwo);
       return;
     }
     setPhase("building");
@@ -385,14 +429,15 @@ export default function CreateFlow() {
         items: payload,
         mannequinType: mannequin,
         stylePreset: preset,
+        locale,
       });
       outfitId = created.id;
-      setWarnings(created.warnings);
+      setWarnings(created.warnings.map((code) => warningText(locale, code)));
       setPlanState("done");
     } catch (e) {
       setPlanState("error");
       setPhase("review");
-      setGlobalError(e instanceof ApiClientError ? e.message : friendlyMessage("INTERNAL"));
+      setGlobalError(fromError(e, "INTERNAL"));
       return;
     }
 
@@ -403,7 +448,7 @@ export default function CreateFlow() {
     } catch (e) {
       setPreviewState("error");
       setPhase("review");
-      setGlobalError(e instanceof ApiClientError ? e.message : friendlyMessage("GENERATION_FAILED"));
+      setGlobalError(fromError(e, "GENERATION_FAILED"));
       return;
     }
 
@@ -421,26 +466,22 @@ export default function CreateFlow() {
   /* --------------------------------- render -------------------------------- */
 
   const processingSteps: Step[] = [
-    { id: "collect", label: "Collecting product images", state: collectState },
-    { id: "analyze", label: "Analyzing clothing items", state: analyzeState },
+    { id: "collect", label: M.stepCollect, state: collectState },
+    { id: "analyze", label: M.stepAnalyze, state: analyzeState },
   ];
   const buildingSteps: Step[] = [
-    { id: "plan", label: "Planning the outfit", state: planState },
-    { id: "preview", label: "Creating the mannequin preview", state: previewState },
-    { id: "score", label: "Scoring & preparing your style report", state: scoreState },
+    { id: "plan", label: M.stepPlan, state: planState },
+    { id: "preview", label: M.stepPreview, state: previewState },
+    { id: "score", label: M.stepScore, state: scoreState },
   ];
 
   return (
     <div className="mx-auto max-w-3xl px-5 py-10">
-      <SectionLabel>Build your outfit</SectionLabel>
+      <SectionLabel>{M.eyebrow}</SectionLabel>
       <h1 className="mt-2 font-display text-4xl tracking-tight">
-        {phase === "review" ? "Review your items" : "Add your pieces"}
+        {phase === "review" ? M.titleReview : M.titleAdd}
       </h1>
-      <p className="mt-2 text-sm text-taupe">
-        {phase === "review"
-          ? "Confirm what we detected, pick a mannequin, then generate your outfit."
-          : "Add clothing links or upload your clothes. We'll create the outfit for you."}
-      </p>
+      <p className="mt-2 text-sm text-taupe">{phase === "review" ? M.subReview : M.subAdd}</p>
 
       {globalError && (
         <div className="mt-6 rounded-xl border border-clay/30 bg-clay/5 px-4 py-3 text-sm text-clay">
@@ -465,7 +506,7 @@ export default function CreateFlow() {
                     : "rounded-full px-4 py-1.5 text-taupe hover:text-ink"
                 }
               >
-                {m === "links" ? "Product links" : "Upload photos"}
+                {m === "links" ? M.tabLinks : M.tabUpload}
               </button>
             ))}
           </div>
@@ -475,16 +516,13 @@ export default function CreateFlow() {
               {slots.map((slot) => (
                 <Card key={slot.id} className="p-4">
                   <div className="flex items-center justify-between">
-                    <label
-                      htmlFor={`slot-${slot.id}`}
-                      className="text-sm font-medium text-ink"
-                    >
+                    <label htmlFor={`slot-${slot.id}`} className="text-sm font-medium text-ink">
                       {slot.label}
                       {slot.optional && (
-                        <span className="ml-2 text-xs font-normal text-taupe">optional</span>
+                        <span className="ml-2 text-xs font-normal text-taupe">{M.optional}</span>
                       )}
                     </label>
-                    {slot.status === "done" && <Badge tone="moss">Ready</Badge>}
+                    {slot.status === "done" && <Badge tone="moss">{M.ready}</Badge>}
                     {slot.status === "loading" && <Spinner className="text-taupe" />}
                   </div>
 
@@ -498,7 +536,7 @@ export default function CreateFlow() {
                       />
                       <div className="min-w-0 text-sm">
                         <p className="truncate text-ink">
-                          {slot.product?.title ?? slot.fallbackUpload?.imageKey.split("/").pop()}
+                          {slot.product?.title ?? M.uploadedImage}
                         </p>
                         <p className="text-xs text-taupe">
                           {slot.product
@@ -507,7 +545,7 @@ export default function CreateFlow() {
                                   ? ` · ${slot.product.price} ${slot.product.currency ?? ""}`
                                   : ""
                               }`
-                            : "Uploaded image"}
+                            : M.yourPhoto}
                         </p>
                       </div>
                       <button
@@ -523,7 +561,7 @@ export default function CreateFlow() {
                         }
                         className="ml-auto text-xs text-taupe hover:text-clay"
                       >
-                        Remove
+                        {M.remove}
                       </button>
                     </div>
                   ) : (
@@ -532,7 +570,7 @@ export default function CreateFlow() {
                         id={`slot-${slot.id}`}
                         type="url"
                         inputMode="url"
-                        placeholder="https://store.com/product…"
+                        placeholder={M.urlPlaceholder}
                         value={slot.url}
                         onChange={(e) =>
                           updateSlot(slot.id, { url: e.target.value, error: undefined })
@@ -544,7 +582,7 @@ export default function CreateFlow() {
                           <p>{slot.error}</p>
                           <label className="mt-2 inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-moss">
                             {slot.uploading ? <Spinner /> : null}
-                            {slot.uploading ? "Uploading…" : "Upload the product image instead"}
+                            {slot.uploading ? M.uploading : M.uploadInstead}
                             <input
                               type="file"
                               accept="image/jpeg,image/png,image/webp,image/avif"
@@ -566,20 +604,17 @@ export default function CreateFlow() {
                 onClick={addExtraSlot}
                 className="text-sm font-medium text-moss hover:underline"
               >
-                + Add another item
+                {M.addAnother}
               </button>
               <div className="pt-2">
-                <Button onClick={() => void handleContinueLinks()}>Analyze my items</Button>
+                <Button onClick={() => void handleContinueLinks()}>{M.analyzeBtn}</Button>
               </div>
             </div>
           ) : (
             <div className="mt-6 space-y-4">
               <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-hairline bg-white px-6 py-12 text-center transition-colors hover:border-moss">
-                <span className="font-display text-xl">Drop photos here or tap to choose</span>
-                <span className="text-sm text-taupe">
-                  JPEG, PNG, WebP or AVIF · up to 10&nbsp;MB each · several garments in one photo
-                  are fine
-                </span>
+                <span className="font-display text-xl">{M.dropTitle}</span>
+                <span className="text-sm text-taupe">{M.dropSub}</span>
                 <input
                   type="file"
                   accept="image/jpeg,image/png,image/webp,image/avif"
@@ -619,7 +654,7 @@ export default function CreateFlow() {
                         type="button"
                         onClick={() => setUploads((prev) => prev.filter((x) => x.id !== u.id))}
                         className="absolute right-1.5 top-1.5 rounded-full bg-ink/70 px-2 py-0.5 text-xs text-paper"
-                        aria-label={`Remove ${u.fileName}`}
+                        aria-label={`${M.remove}: ${u.fileName}`}
                       >
                         ✕
                       </button>
@@ -628,7 +663,7 @@ export default function CreateFlow() {
                 </div>
               )}
               <div className="pt-2">
-                <Button onClick={() => void handleContinueUploads()}>Analyze my items</Button>
+                <Button onClick={() => void handleContinueUploads()}>{M.analyzeBtn}</Button>
               </div>
             </div>
           )}
@@ -645,10 +680,16 @@ export default function CreateFlow() {
         <div className="mt-8 space-y-6">
           {unidentified.length > 0 && (
             <div className="rounded-xl bg-amber-soft px-4 py-3 text-sm text-amber-ink">
-              {friendlyMessage("CLOTHING_NOT_DETECTED")}{" "}
+              {msg("CLOTHING_NOT_DETECTED")}{" "}
               <span className="text-amber-ink/80">
-                (Skipped: {unidentified.join(", ")})
+                ({M.skipped}: {unidentified.join(", ")})
               </span>
+            </div>
+          )}
+
+          {duplicateNotice && (
+            <div className="rounded-xl bg-amber-soft px-4 py-3 text-sm text-amber-ink">
+              {M.dupTitle} {duplicateNotice.join(", ")}. {M.dupNote}
             </div>
           )}
 
@@ -661,13 +702,13 @@ export default function CreateFlow() {
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={item.imageUrl}
-                      alt={item.analysis.description ?? item.category}
+                      alt={item.analysis.description ?? categoryLabel(locale, item.category)}
                       className="size-20 shrink-0 rounded-lg border border-hairline object-cover"
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
                         <p className="text-xs uppercase tracking-wide text-taupe">
-                          {item.meta.source === "URL" ? "Original product" : "Your photo"}
+                          {item.meta.source === "URL" ? M.originalProduct : M.yourPhoto}
                         </p>
                         <button
                           type="button"
@@ -676,11 +717,11 @@ export default function CreateFlow() {
                           }
                           className="text-xs text-taupe hover:text-clay"
                         >
-                          Remove
+                          {M.remove}
                         </button>
                       </div>
                       <p className="mt-1 line-clamp-2 text-sm text-ink">
-                        {item.analysis.description ?? categoryLabel(item.category)}
+                        {item.analysis.description || categoryLabel(locale, item.category)}
                       </p>
                       {(item.meta.brand || item.meta.price != null) && (
                         <p className="mt-0.5 text-xs text-taupe">
@@ -702,11 +743,11 @@ export default function CreateFlow() {
                           })
                         }
                         className="mt-2 w-full rounded-lg border border-hairline bg-paper px-2.5 py-1.5 text-sm outline-none focus:border-moss"
-                        aria-label="Clothing category"
+                        aria-label={M.categoryAria}
                       >
                         {CLOTHING_CATEGORIES.map((c) => (
                           <option key={c} value={c}>
-                            {categoryLabel(c)}
+                            {categoryLabel(locale, c)}
                           </option>
                         ))}
                       </select>
@@ -716,13 +757,11 @@ export default function CreateFlow() {
                   {flagged && (
                     <div className="border-t border-hairline bg-amber-soft px-4 py-3 text-sm text-amber-ink">
                       <p>
-                        We think this is a{" "}
-                        <span className="font-medium">
-                          {[item.analysis.color, categoryLabel(item.category)]
+                        {M.confirmAsk(
+                          [item.analysis.color, categoryLabel(locale, item.category)]
                             .filter(Boolean)
-                            .join(" ")}
-                        </span>
-                        . Is that right?
+                            .join(" "),
+                        )}
                       </p>
                       <div className="mt-2 flex gap-2">
                         <Button
@@ -730,7 +769,7 @@ export default function CreateFlow() {
                           className="!px-3 !py-1 text-xs"
                           onClick={() => patchReviewItem(item.id, { confirmed: true })}
                         >
-                          Correct
+                          {M.correct}
                         </Button>
                         <Button
                           variant="ghost"
@@ -740,7 +779,7 @@ export default function CreateFlow() {
                             el?.focus();
                           }}
                         >
-                          Change category
+                          {M.changeCategory}
                         </Button>
                       </div>
                     </div>
@@ -752,7 +791,7 @@ export default function CreateFlow() {
 
           <Card className="space-y-5 p-5">
             <div>
-              <SectionLabel>Mannequin</SectionLabel>
+              <SectionLabel>{M.mannequin}</SectionLabel>
               <div className="mt-2 flex flex-wrap gap-2">
                 {MANNEQUIN_TYPES.map((m) => (
                   <button
@@ -765,13 +804,13 @@ export default function CreateFlow() {
                         : "rounded-full border border-hairline bg-white px-4 py-1.5 text-sm text-taupe hover:text-ink"
                     }
                   >
-                    {MANNEQUIN_LABELS[m]}
+                    {mannequinLabel(locale, m)}
                   </button>
                 ))}
               </div>
             </div>
             <div>
-              <SectionLabel>Style preset</SectionLabel>
+              <SectionLabel>{M.preset}</SectionLabel>
               <div className="mt-2 flex flex-wrap gap-2">
                 {STYLE_PRESETS.map((p) => (
                   <button
@@ -784,27 +823,21 @@ export default function CreateFlow() {
                         : "rounded-full border border-hairline bg-white px-4 py-1.5 text-sm text-taupe hover:text-ink"
                     }
                   >
-                    {STYLE_PRESET_LABELS[p]}
+                    {presetLabel(locale, p)}
                   </button>
                 ))}
               </div>
-              <p className="mt-2 text-xs text-taupe">
-                Presets guide the mannequin&rsquo;s pose &amp; backdrop mood only — your garments are
-                never altered.
-              </p>
+              <p className="mt-2 text-xs text-taupe">{M.presetNote}</p>
             </div>
             <div className="flex flex-wrap items-center gap-3 border-t border-hairline pt-4">
               <Button
                 onClick={() => void handleGenerate()}
                 disabled={pendingConfirmations > 0 || reviewItems.length < 2}
               >
-                Generate Outfit
+                {M.generate}
               </Button>
               {pendingConfirmations > 0 && (
-                <span className="text-sm text-taupe">
-                  Confirm {pendingConfirmations} highlighted item
-                  {pendingConfirmations > 1 ? "s" : ""} first.
-                </span>
+                <span className="text-sm text-taupe">{M.confirmPending(pendingConfirmations)}</span>
               )}
               <button
                 type="button"
@@ -815,7 +848,7 @@ export default function CreateFlow() {
                 }}
                 className="text-sm text-taupe hover:text-ink"
               >
-                ← Back
+                {M.back}
               </button>
             </div>
           </Card>
@@ -828,9 +861,7 @@ export default function CreateFlow() {
           {warnings.length > 0 && (
             <p className="mt-4 text-xs text-taupe">{warnings.join(" · ")}</p>
           )}
-          <p className="mt-4 text-xs text-taupe">
-            The preview is AI-generated — original product photos always stay untouched.
-          </p>
+          <p className="mt-4 text-xs text-taupe">{M.buildingHonesty}</p>
         </Card>
       )}
     </div>

@@ -19,31 +19,39 @@ import {
 } from "@/types/clothing";
 import type { AnalyzedItemDto } from "@/types/api";
 
-const PROMPT_VERSION = "v1";
+const PROMPT_VERSION = "v2";
 const CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
 const ANALYSIS_SEED = 7;
 
 type CachedItem = ClothingAttributes & { categoryMatched: boolean };
 
-const SYSTEM_PROMPT = `You are a meticulous fashion product analyst.
+const LANGUAGE_NAMES: Record<string, string> = { tr: "Turkish", en: "English" };
+
+function buildSystemPrompt(locale: string): string {
+  const language = LANGUAGE_NAMES[locale] ?? "Turkish";
+  return `You are a meticulous fashion product analyst.
 You receive one photo that contains one or more clothing items or accessories.
 Identify EVERY distinct garment or accessory in the photo and return them in the "items" array. Return an empty array if none are clearly visible.
 
 Rules:
-- "category" MUST be exactly one of: ${CLOTHING_CATEGORIES.join(", ")}.
+- "category" MUST be exactly one of these ENGLISH keys, unchanged: ${CLOTHING_CATEGORIES.join(", ")}.
+- ALL free-text fields — "description", "color", "secondaryColors", "pattern", "material", "fit", "style" — must be written in ${language}.
 - If the photo shows a person wearing clothes, describe only the garments, never the person.
-- Name the primary color in simple words (e.g. "white", "navy blue") and up to 4 secondary colors.
-- "pattern" is "plain" when there is none; otherwise e.g. "striped", "checked", "floral", "graphic print".
-- Fabric cannot be verified from a photo: phrase "material" with hedged wording such as "appears to be cotton" or "looks like a wool blend". Never state a material as a fact.
-- "description" is one factual sentence with the visual details needed to faithfully reproduce this exact item (color, cut, closures, prints, hardware).
+- Name the primary color in simple ${language} words and up to 4 secondary colors.
+- "pattern" describes the print in ${language}; use the ${language} word for "plain" when there is none.
+- Fabric cannot be verified from a photo: phrase "material" with hedged ${language} wording (the equivalent of "appears to be cotton"). Never state a material as a fact.
+- "description" is one factual ${language} sentence with the visual details needed to faithfully reproduce this exact item (color, cut, closures, prints, hardware).
 - "confidence" is your honest 0-1 certainty about the category identification.
 - Never invent details you cannot see.`;
+}
 
 export interface ClothingAnalysisInput {
   buffer: Buffer;
   imageKey: string;
   imageUrl: string;
   slotHint?: string;
+  /** Language of the free-text fields ("tr" default). */
+  locale?: string;
 }
 
 /**
@@ -56,16 +64,19 @@ export async function analyzeClothingImage(
   const aiImage = await toAiInputImage(input.buffer);
   const hash = sha256(aiImage.buffer);
   const models = getModels();
+  const locale = input.locale === "en" ? "en" : "tr";
   const key = cacheKey(
     "clothing-analysis",
     PROMPT_VERSION,
     models.vision,
     hash,
     input.slotHint ?? "",
+    locale,
   );
 
   const cached = await cacheGet<CachedItem[]>(key);
-  const items = cached ?? (await runAnalysis(aiImage.buffer, models.vision, input.slotHint));
+  const items =
+    cached ?? (await runAnalysis(aiImage.buffer, models.vision, locale, input.slotHint));
   if (!cached) await cacheSet(key, "clothing-analysis", items, CACHE_TTL_SECONDS);
 
   return items.map((item) => ({ ...item, imageKey: input.imageKey, imageUrl: input.imageUrl }));
@@ -74,6 +85,7 @@ export async function analyzeClothingImage(
 async function runAnalysis(
   jpeg: Buffer,
   model: string,
+  locale: string,
   slotHint?: string,
 ): Promise<CachedItem[]> {
   const blocks: AiBlock[] = [
@@ -88,7 +100,7 @@ async function runAnalysis(
   const parsed = await generateStructured({
     model,
     input: blocks,
-    system: SYSTEM_PROMPT,
+    system: buildSystemPrompt(locale),
     schema: CLOTHING_ANALYSIS_JSON_SCHEMA,
     zodSchema: clothingAnalysisResponseSchema,
     seed: ANALYSIS_SEED,

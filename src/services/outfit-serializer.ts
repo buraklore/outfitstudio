@@ -5,6 +5,7 @@ import type {
   OutfitDto,
   OutfitItemDto,
   ScoreEntryDto,
+  SuggestedOutfitDto,
 } from "@/types/api";
 import type { ClothingCategory, OutfitSlot } from "@/types/clothing";
 import type { MannequinType, OutfitStatusValue, StylePreset } from "@/types/outfit";
@@ -39,6 +40,7 @@ export function toOutfitDto(outfit: OutfitWithRelations): OutfitDto {
   return {
     id: outfit.id,
     status: outfit.status as OutfitStatusValue,
+    locale: outfit.locale === "en" ? "en" : "tr",
     mannequinType: outfit.mannequinType as MannequinType,
     stylePreset: (outfit.stylePreset as StylePreset | null) ?? null,
     generatedImageUrl: outfit.generatedImageUrl,
@@ -58,6 +60,18 @@ export function toAnalysisDto(analysis: StoredAnalysis): OutfitAnalysisDto {
   const improvements: ImprovementDto[] = Array.isArray(improvementsRaw)
     ? (improvementsRaw as ImprovementDto[])
     : [];
+  const suggestedRaw = analysis.suggestedOutfit as unknown;
+  const suggestedOutfit: SuggestedOutfitDto | null =
+    suggestedRaw &&
+    typeof suggestedRaw === "object" &&
+    typeof (suggestedRaw as SuggestedOutfitDto).summary === "string"
+      ? {
+          summary: (suggestedRaw as SuggestedOutfitDto).summary,
+          items: Array.isArray((suggestedRaw as SuggestedOutfitDto).items)
+            ? (suggestedRaw as SuggestedOutfitDto).items
+            : [],
+        }
+      : null;
   return {
     overallScore: analysis.overallScore,
     label: analysis.label,
@@ -68,5 +82,6 @@ export function toAnalysisDto(analysis: StoredAnalysis): OutfitAnalysisDto {
     bestFor: analysis.bestFor,
     detectedStyles: analysis.detectedStyles,
     dominantColors: analysis.dominantColors,
+    suggestedOutfit,
   };
 }

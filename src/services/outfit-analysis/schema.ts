@@ -32,6 +32,14 @@ export const outfitAnalysisResponseSchema = z.object({
   bestFor: z.array(z.string()).max(6).catch([]).default([]),
   detectedStyles: z.array(z.string()).max(5).catch([]).default([]),
   dominantColors: z.array(z.string()).max(6).catch([]).default([]),
+  suggestedOutfit: z
+    .object({
+      summary: z.string(),
+      items: z.array(z.string()).max(6).catch([]).default([]),
+    })
+    .nullable()
+    .catch(null)
+    .default(null),
 });
 
 export type OutfitAnalysisResponse = z.infer<typeof outfitAnalysisResponseSchema>;
@@ -119,6 +127,25 @@ export const OUTFIT_ANALYSIS_JSON_SCHEMA: Record<string, unknown> = {
       },
     },
     dominantColors: { type: "array", maxItems: 5, items: { type: "string" } },
+    suggestedOutfit: {
+      type: ["object", "null"],
+      description:
+        "Only when the outfit has clear problems: a corrected combination built primarily from the provided garments. Otherwise null.",
+      properties: {
+        summary: {
+          type: "string",
+          description:
+            "2-4 sentences, in the target language: which items to keep, which to drop, and what generic kind of piece to add instead (no brands, no invented products).",
+        },
+        items: {
+          type: "array",
+          maxItems: 6,
+          items: { type: "string" },
+          description: "The recommended combination as a short list of pieces, in the target language.",
+        },
+      },
+      required: ["summary", "items"],
+    },
   },
   required: [
     "breakdown",
@@ -128,5 +155,6 @@ export const OUTFIT_ANALYSIS_JSON_SCHEMA: Record<string, unknown> = {
     "bestFor",
     "detectedStyles",
     "dominantColors",
+    "suggestedOutfit",
   ],
 };

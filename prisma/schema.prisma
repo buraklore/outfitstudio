@@ -98,6 +98,7 @@ model Outfit {
   user              User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
   status            OutfitStatus     @default(DRAFT)
   mannequinType     MannequinType    @default(NEUTRAL)
+  locale            String           @default("tr")
   stylePreset       String?
   generatedImageKey String?
   generatedImageUrl String?
@@ -140,21 +141,22 @@ model GeneratedImage {
 }
 
 model OutfitAnalysis {
-  id             String   @id @default(cuid())
-  outfitId       String   @unique
-  outfit         Outfit   @relation(fields: [outfitId], references: [id], onDelete: Cascade)
-  overallScore   Int
-  label          String
-  breakdown      Json // [{ key, label, score, maxScore, reasoning }]
-  styleComment   String
-  whyItWorks     String
-  improvements   Json // [{ action: add|swap|adjust|avoid, text }]
-  bestFor        String[] @default([])
-  detectedStyles String[] @default([])
-  dominantColors String[] @default([])
-  model          String
-  promptVersion  String
-  createdAt      DateTime @default(now())
+  id              String   @id @default(cuid())
+  outfitId        String   @unique
+  outfit          Outfit   @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+  overallScore    Int
+  label           String
+  breakdown       Json // [{ key, label, score, maxScore, reasoning }]
+  styleComment    String
+  whyItWorks      String
+  improvements    Json // [{ action: add|swap|adjust|avoid, text }]
+  bestFor         String[] @default([])
+  detectedStyles  String[] @default([])
+  dominantColors  String[] @default([])
+  suggestedOutfit Json?
+  model           String
+  promptVersion   String
+  createdAt       DateTime @default(now())
 }
 
 /// Content-addressed cache for expensive operations (URL extraction, vision analysis).

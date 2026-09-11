@@ -9,7 +9,7 @@ import type { MannequinType, StylePreset } from "@/types/outfit";
  * the wording changes so caches and stored prompts stay traceable.
  */
 
-export const OUTFIT_PROMPT_VERSION = "v1";
+export const OUTFIT_PROMPT_VERSION = "v2";
 
 export interface PromptItem {
   /** 1-based position of this garment among the input images. */
@@ -35,9 +35,12 @@ export interface OutfitPromptOptions {
 }
 
 const MANNEQUIN_DESCRIPTIONS: Record<MannequinType, string> = {
-  NEUTRAL: "a gender-neutral, featureless retail display mannequin",
-  MALE: "a male-proportioned, featureless retail display mannequin",
-  FEMALE: "a female-proportioned, featureless retail display mannequin",
+  NEUTRAL:
+    "a gender-neutral, androgynous, featureless retail display mannequin (slim, neutral silhouette)",
+  MALE:
+    "a clearly MALE retail display mannequin form — broad shoulders, flat chest, straight hips, masculine proportions — completely featureless",
+  FEMALE:
+    "a clearly FEMALE retail display mannequin form — narrower shoulders, defined waist, feminine proportions — completely featureless",
 };
 
 /** Styling context only — never permission to alter the garments. */
@@ -99,5 +102,9 @@ STRICT PRESERVATION RULES
 4. Preserve the exact shoe design, sole shape and colorway.
 5. Do not redesign, recolor, simplify or replace any item with a similar alternative product.
 6. Do not invent logos, graphics or details that are not visible in the input images; where a detail is not visible, keep that area plain and neutral.
-7. The output must contain no readable brand text unless it is clearly visible on the original garment.${presetNote ? `\n\n${presetNote}` : ""}`;
+7. The output must contain no readable brand text unless it is clearly visible on the original garment.
+8. NEVER add any garment or accessory that is not among the input images — no belts, watches, jewelry, bags, hats, scarves, sunglasses, undershirts.
+9. Dress the mannequin in every garment with natural layering. NEVER place any item on the floor, in the mannequin's hands, or beside the mannequin.
+10. If two items occupy the same body area and cannot be layered naturally (e.g. two trousers or two pairs of shoes), the mannequin wears ONLY the first-listed one; omit the other completely from the image.
+11. The mannequin's body form must match its stated type exactly; garments drape on that form without changing their own cut.${presetNote ? `\n\n${presetNote}` : ""}`;
 }

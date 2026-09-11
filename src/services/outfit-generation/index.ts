@@ -53,11 +53,11 @@ export function buildOutfit(items: Array<{ category: ClothingCategory }>): Built
   const present = new Set(slots.map((s) => s.slot));
   const warnings: string[] = [];
   const hasFull = present.has("full");
-  if (!hasFull && !present.has("top")) warnings.push("No top selected.");
-  if (!hasFull && !present.has("bottom")) warnings.push("No bottom selected.");
-  if (!present.has("shoes")) warnings.push("No shoes selected.");
+  if (!hasFull && !present.has("top")) warnings.push("missing-top");
+  if (!hasFull && !present.has("bottom")) warnings.push("missing-bottom");
+  if (!present.has("shoes")) warnings.push("missing-shoes");
   if (items.length > MAX_REFERENCE_IMAGES) {
-    warnings.push(`Only the first ${MAX_REFERENCE_IMAGES} items can be rendered.`);
+    warnings.push("max-items");
   }
   return { slots, warnings };
 }

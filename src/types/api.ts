@@ -80,6 +80,11 @@ export interface ImprovementDto {
   text: string;
 }
 
+export interface SuggestedOutfitDto {
+  summary: string;
+  items: string[];
+}
+
 export interface OutfitAnalysisDto {
   overallScore: number;
   label: string;
@@ -90,6 +95,7 @@ export interface OutfitAnalysisDto {
   bestFor: string[];
   detectedStyles: string[];
   dominantColors: string[];
+  suggestedOutfit: SuggestedOutfitDto | null;
 }
 
 export interface OutfitItemDto {
@@ -110,6 +116,7 @@ export interface OutfitItemDto {
 export interface OutfitDto {
   id: string;
   status: OutfitStatusValue;
+  locale: "tr" | "en";
   mannequinType: MannequinType;
   stylePreset: StylePreset | null;
   generatedImageUrl: string | null;
