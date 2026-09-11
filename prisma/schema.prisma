@@ -1,0 +1,171 @@
+// Outfit Studio — Prisma schema
+// PostgreSQL. Auth is anonymous-cookie based for the MVP; the User model is the
+// seam where a real auth provider plugs in later (see src/lib/auth.ts).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id @default(cuid())
+  anonymousId   String         @unique
+  createdAt     DateTime       @default(now())
+  clothingItems ClothingItem[]
+  outfits       Outfit[]
+}
+
+enum ItemSource {
+  URL
+  UPLOAD
+}
+
+enum OutfitStatus {
+  DRAFT
+  GENERATING
+  GENERATED
+  ANALYZING
+  ANALYZED
+  FAILED
+}
+
+enum MannequinType {
+  NEUTRAL
+  MALE
+  FEMALE
+}
+
+/// Raw result of extracting a product from an external URL.
+model ProductSource {
+  id               String         @id @default(cuid())
+  url              String
+  domain           String
+  title            String?
+  description      String?
+  brand            String?
+  price            Float?
+  currency         String?
+  color            String?
+  size             String?
+  category         String?
+  extractionMethod String // json-ld | opengraph | heuristic
+  confidence       Json // { image: number, metadata: number }
+  raw              Json?
+  createdAt        DateTime       @default(now())
+  clothingItems    ClothingItem[]
+
+  @@index([url])
+}
+
+/// One garment / accessory, from a URL or an upload.
+model ClothingItem {
+  id                 String         @id @default(cuid())
+  userId             String?
+  user               User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  source             ItemSource
+  sourceUrl          String?
+  productSourceId    String?
+  productSource      ProductSource? @relation(fields: [productSourceId], references: [id], onDelete: SetNull)
+  imageKey           String
+  imageUrl           String
+  category           String
+  subcategory        String?
+  color              String?
+  secondaryColors    String[]       @default([])
+  pattern            String?
+  material           String?
+  fit                String?
+  style              String?
+  season             String?
+  formality          String?
+  genderPresentation String?
+  description        String?
+  confidence         Float?
+  metadata           Json?
+  createdAt          DateTime       @default(now())
+  outfitItems        OutfitItem[]
+
+  @@index([userId])
+}
+
+model Outfit {
+  id                String           @id @default(cuid())
+  userId            String?
+  user              User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  status            OutfitStatus     @default(DRAFT)
+  mannequinType     MannequinType    @default(NEUTRAL)
+  stylePreset       String?
+  generatedImageKey String?
+  generatedImageUrl String?
+  overallScore      Int?
+  failureCode       String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  items             OutfitItem[]
+  images            GeneratedImage[]
+  analysis          OutfitAnalysis?
+
+  @@index([userId, createdAt])
+}
+
+model OutfitItem {
+  id             String       @id @default(cuid())
+  outfitId       String
+  outfit         Outfit       @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+  clothingItemId String
+  clothingItem   ClothingItem @relation(fields: [clothingItemId], references: [id], onDelete: Cascade)
+  slot           String // top | bottom | full | outerwear | shoes | accessory
+  position       Int          @default(0)
+
+  @@unique([outfitId, clothingItemId])
+  @@index([outfitId])
+}
+
+/// Every AI-generated preview image, with the exact prompt and model used.
+model GeneratedImage {
+  id        String   @id @default(cuid())
+  outfitId  String
+  outfit    Outfit   @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+  imageKey  String
+  url       String
+  prompt    String
+  model     String
+  createdAt DateTime @default(now())
+
+  @@index([outfitId])
+}
+
+model OutfitAnalysis {
+  id             String   @id @default(cuid())
+  outfitId       String   @unique
+  outfit         Outfit   @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+  overallScore   Int
+  label          String
+  breakdown      Json // [{ key, label, score, maxScore, reasoning }]
+  styleComment   String
+  whyItWorks     String
+  improvements   Json // [{ action: add|swap|adjust|avoid, text }]
+  bestFor        String[] @default([])
+  detectedStyles String[] @default([])
+  dominantColors String[] @default([])
+  model          String
+  promptVersion  String
+  createdAt      DateTime @default(now())
+}
+
+/// Content-addressed cache for expensive operations (URL extraction, vision analysis).
+model AnalysisCache {
+  id        String    @id @default(cuid())
+  cacheKey  String    @unique
+  kind      String
+  payload   Json
+  createdAt DateTime  @default(now())
+  expiresAt DateTime?
+
+  @@index([kind])
+  @@index([expiresAt])
+}

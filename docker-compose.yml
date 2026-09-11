@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: outfit
+      POSTGRES_PASSWORD: outfit
+      POSTGRES_DB: outfit_studio
+    ports:
+      - "5432:5432"
+    volumes:
+      - outfit_pgdata:/var/lib/postgresql/data
+
+volumes:
+  outfit_pgdata:
