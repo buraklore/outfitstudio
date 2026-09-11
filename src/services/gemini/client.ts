@@ -163,9 +163,11 @@ export async function generateImage(opts: ImageCallOptions): Promise<GeneratedIm
     interaction = (await ai.interactions.create({
       model: opts.model,
       input: opts.input,
+      // NOTE: the Interactions API currently only supports image/jpeg output;
+      // sending mime_type "image/png" is rejected with 400 invalid_request,
+      // so we omit mime_type and read the actual type from the response.
       response_format: {
         type: "image",
-        mime_type: "image/png",
         ...(opts.aspectRatio ? { aspect_ratio: opts.aspectRatio } : {}),
         ...(opts.imageSize ? { image_size: opts.imageSize } : {}),
       },
@@ -183,7 +185,7 @@ export async function generateImage(opts: ImageCallOptions): Promise<GeneratedIm
   }
   return {
     data: Buffer.from(image.data, "base64"),
-    mimeType: image.mime_type ?? "image/png",
+    mimeType: image.mime_type ?? "image/jpeg",
     modelText: interaction.output_text ?? undefined,
   };
 }
